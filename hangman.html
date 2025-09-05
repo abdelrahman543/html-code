@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hangman – نسخة الويب</title>
+  <style>
+    :root {
+      --gap: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      margin: 0; padding: 32px; display: grid; place-items: center; min-height: 100svh; background: #0e0f12; color: #e9edf1;
+    }
+    .card {
+      width: min(760px, 95vw);
+      background: #16181d; border: 1px solid #262a33; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    h1 { margin: 0 0 12px; font-size: clamp(22px, 4vw, 28px); letter-spacing: .5px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap); }
+    .pill { background:#0f1218; border:1px solid #2a2f3a; padding:8px 12px; border-radius:999px; font-size:14px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: var(--gap); }
+    pre {
+      background: #0f1216; border: 1px solid #242832; border-radius: 12px; padding: 16px; overflow: auto; margin: 0; font-size: 14px; line-height: 1.25; direction: ltr; text-align: left;
+    }
+    .word { letter-spacing: .35em; font-variant-ligatures: none; font-size: clamp(22px, 6vw, 34px); text-align: center; margin: 6px 0 0; font-weight: 700; }
+    .controls { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; }
+    input[type="text"] {
+      width: 70px; padding: 10px 12px; border-radius: 10px; border: 1px solid #2b313d; background: #0d1016; color: #e9edf1; font-size: 18px; text-align: center;
+    }
+    button {
+      padding: 10px 14px; border-radius: 10px; border: 1px solid #2b313d; background: #11151c; color: #e9edf1; cursor: pointer; font-weight: 600;
+    }
+    button:hover { background: #171c25; }
+    .muted { color: #96a0ad; font-size: 14px; }
+    .success { color: #8bd17c; }
+    .danger { color: #ff6b6b; }
+    .spacer { height: 8px; }
+    .badges { display:flex; flex-wrap:wrap; gap:8px; }
+    .badge { border:1px dashed #2b313d; padding:4px 8px; border-radius:8px; font-size:12px; color:#aab4c0; }
+  </style>
+</head>
+<body>
+  <div class="card grid">
+    <div class="row" style="justify-content: space-between; align-items: baseline;">
+      <h1>لعبة الرجل المشنوق (Hangman)</h1>
+      <span class="pill" id="lives">المحاولات: 6 / 6</span>
+    </div>
+
+    <div class="grid">
+      <pre id="stage"></pre>
+      <div class="word" id="displayWord">_ _ _ _ _</div>
+      <div class="muted" id="message">خمن حرفًا واحدًا (a-z).</div>
+    </div>
+
+    <div class="controls">
+      <input id="letterInput" type="text" inputmode="latin" maxlength="1" autocomplete="off" placeholder="حرف" />
+      <button id="guessBtn">تخمين</button>
+      <button id="newGameBtn" title="بدء جولة جديدة">لعبة جديدة</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="grid">
+      <div class="badges" id="wrongLetters"></div>
+      <div class="muted">الكلمات المستخدمة يمكن تعديلها من داخل الكود (wordList[]).</div>
+    </div>
+  </div>
+
+  <script>
+    // === نفس منطق ملفات البايثون المرفوعة، محول إلى جافاسكريبت ===
+    const stages = [
+`  +---+\n  |   |\n      |\n      |\n      |\n      |\n=========`,
+`  +---+\n  |   |\n  O   |\n      |\n      |\n      |\n=========`,
+`  +---+\n  |   |\n  O   |\n  |   |\n      |\n      |\n=========`,
+`  +---+\n  |   |\n  O   |\n /|   |\n      |\n      |\n=========`,
+`  +---+\n  |   |\n  O   |\n /|\\  |\n      |\n      |\n=========`,
+`  +---+\n  |   |\n  O   |\n /|\\  |\n /    |\n      |\n=========`,
+`  +---+\n  |   |\n  O   |\n /|\\  |\n / \\  |\n      |\n=========`
+];
+
+    // دمج قوائم الكلمات من الملفين (تقدر تعدلها براحتك)
+    const wordList = ["games", "anime", "mango", "python", "hangman", "developer", "github"]; // مستمدة من ملفاتك
+
+    let secretWord = "";
+    let correctLetters = new Set();
+    let wrongLetters = new Set();
+    let lives = 6; // زي البايثون: stages.length - 1
+
+    const $stage = document.getElementById('stage');
+    const $displayWord = document.getElementById('displayWord');
+    const $message = document.getElementById('message');
+    const $lives = document.getElementById('lives');
+    const $input = document.getElementById('letterInput');
+    const $guessBtn = document.getElementById('guessBtn');
+    const $newGame = document.getElementById('newGameBtn');
+    const $wrong = document.getElementById('wrongLetters');
+
+    function randomChoice(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function initGame(){
+      secretWord = randomChoice(wordList).toLowerCase();
+      correctLetters.clear();
+      wrongLetters.clear();
+      lives = 6;
+      render();
+      $message.textContent = 'خمن حرفًا واحدًا (a-z).';
+      $input.value = '';
+      $input.disabled = false;
+      $guessBtn.disabled = false;
+      $input.focus();
+    }
+
+    function currentDisplay(){
+      return secretWord.split('').map(ch => (correctLetters.has(ch) ? ch : '_')).join(' ');
+    }
+
+    function render(){
+      $stage.textContent = stages[stages.length - 1 - lives]; // نفس منطق البايثون (stages[lives]) مع قلب الترتيب لراحة العرض
+      $displayWord.textContent = currentDisplay();
+      $lives.textContent = `المحاولات: ${lives} / 6`;
+      $wrong.innerHTML = Array.from(wrongLetters).map(l => `<span class="badge">${l}</span>`).join('');
+    }
+
+    function handleGuess(){
+      const raw = $input.value.trim().toLowerCase();
+      $input.value = '';
+      if(!raw || !/^[a-z]$/.test(raw)){
+        $message.textContent = 'من فضلك أدخل حرف إنجليزي واحد.';
+        return;
+      }
+      if(correctLetters.has(raw) || wrongLetters.has(raw)){
+        $message.textContent = `أنت خمنت الحرف '${raw}' من قبل.`;
+        return;
+      }
+
+      if(secretWord.includes(raw)){
+        correctLetters.add(raw);
+        $message.textContent = 'تخمين صحيح ✓';
+      } else {
+        wrongLetters.add(raw);
+        lives -= 1;
+        $message.textContent = `تخمين خاطئ ✗ — الحرف '${raw}' غير موجود.`;
+      }
+
+      // فوز
+      if(!currentDisplay().includes('_')){
+        $message.innerHTML = `🎉 كسبت! الكلمة كانت: <span class="success">${secretWord}</span>. اضغط "لعبة جديدة".`;
+        $input.disabled = true; $guessBtn.disabled = true;
+      }
+      // خسارة
+      if(lives === 0){
+        $message.innerHTML = `💀 خسرت! الكلمة كانت: <span class="danger">${secretWord}</span>. اضغط "لعبة جديدة".`;
+        $displayWord.textContent = secretWord.split('').join(' ');
+        $input.disabled = true; $guessBtn.disabled = true;
+      }
+
+      render();
+    }
+
+    // أحداث
+    $guessBtn.addEventListener('click', handleGuess);
+    $input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') handleGuess(); });
+    $newGame.addEventListener('click', initGame);
+
+    // تشغيل أول مرة
+    initGame();
+  </script>
+</body>
+</html>
